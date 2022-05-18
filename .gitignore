@@ -1,4 +1,5 @@
 *.pth
+*.h5
 data/
 results/
 *.ipynb
