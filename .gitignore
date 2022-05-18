@@ -1,0 +1,8 @@
+*.pth
+data/
+results/
+*.ipynb
+.*bat
+.ipynb_checkpoints/
+__pycache__/
+setting_*.py
