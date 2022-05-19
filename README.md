@@ -17,6 +17,7 @@ Pretrained Models for RAFT & VGG
 
 - PyTorch (>= 1.8.2)
 - torchvision
+- pytorch_cluster (**==1.5.9**)
 - tqdm
 - opencv-contrib
 </details>
@@ -34,9 +35,13 @@ conda activate iovst
 install torch / torchvision, reference to [official website](https://pytorch.org/get-started/locally/)
 
 ### pytorch-cluster
-reference to [official repository](https://github.com/rusty1s/pytorch_cluster), like this
+reference to [official repository](https://github.com/rusty1s/pytorch_cluster)
+
+In my environment, it didn't work with version 1.6.0 above...
+
+Here is sample install command. 
 ```
-conda install pytorch-cluster -c pyg
+ pip install torch-cluster  https://data.pyg.org/whl/torch-1.8.0%2Bcu102/torch_cluster-1.5.9-cp38-cp38-win_amd64.whl
 ```
 ### others
 finally, install dependent libraries

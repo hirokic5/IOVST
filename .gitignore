@@ -1,5 +1,6 @@
 *.pth
 *.h5
+*.bat
 data/
 results/
 *.ipynb

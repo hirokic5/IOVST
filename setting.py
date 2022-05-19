@@ -13,8 +13,12 @@ class CFG:
     debug = False
     zfill_length = 3
 
+    ##################
+    # pretrained model
+    ##################
+    vgg_weight_file = 'pretrained/vgg19_weights_normalized.h5'
     class raft_args:
-        model = "RAFT/models/raft-things.pth"
+        model = "pretrained/raft-things.pth"
         small = False
         mixed_precision = False
         alternate_corr = False
