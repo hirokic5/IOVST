@@ -6,7 +6,8 @@ Iterative Optimization Video Style Transfers by pytorch.
 ## Repository & Pretrained Weight
 ```
 git clone https://github.com/hirokic5/IOVST.git
-
+git submodule update --init --recursive
+cd IOVST
 ```
 Pretrained Models for RAFT & VGG
 - [RAFT](https://drive.google.com/drive/folders/1sWDsfuZ3Up38EUQt7-JDTT1HcGHuJgvT?usp=sharing) ([original repository](https://github.com/princeton-vl/RAFT.git))
