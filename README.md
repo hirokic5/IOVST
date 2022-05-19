@@ -7,7 +7,6 @@ Iterative Optimization Video Style Transfers by pytorch.
 ```
 git clone https://github.com/hirokic5/IOVST.git
 cd IOVST
-git submodule update --init --recursive
 ```
 Pretrained Models for RAFT & VGG
 - [RAFT](https://drive.google.com/drive/folders/1sWDsfuZ3Up38EUQt7-JDTT1HcGHuJgvT?usp=sharing) ([original repository](https://github.com/princeton-vl/RAFT.git))
@@ -46,3 +45,6 @@ pip install -r requirements.txt
 ```
 
 # Reference
+[Pytorch Brushstroke StyleTransfer implementation](https://github.com/justanhduc/brushstroke-parameterized-style-transfer)
+
+[RAFT official repository](https://github.com/princeton-vl/RAFT)
