@@ -14,7 +14,7 @@ from importlib import import_module
 import shutil
 from tqdm import tqdm as tqdm
 
-from RAFT.core.utils.utils import InputPadder
+from raft_wrapper.utils.utils import InputPadder
 from raft_flow import RAFT_Flow
 from utils_func import init_logger, image_loader, flow_setup, calc_warping_loss
 

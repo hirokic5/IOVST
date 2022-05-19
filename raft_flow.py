@@ -1,12 +1,11 @@
-import _pathmagic  # noqa
 from tqdm import tqdm as tqdm
 import os
 import torch
 import numpy as np
 import utils_func
 
-from utils.utils import InputPadder, coords_grid, bilinear_sampler
-from raft import RAFT
+from raft_wrapper.utils.utils import InputPadder, coords_grid, bilinear_sampler
+from raft_wrapper.raft import RAFT
 
 
 class RAFT_Flow:
