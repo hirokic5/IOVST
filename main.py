@@ -40,17 +40,18 @@ def main(args, config_path):
         zfill_length = args.zfill_length
 
     device = torch.device(args.device)
-    raft = RAFT_Flow(args.raft_args, device=device)
-    for imgsize in [args.stroke_img_size, args.pixel_size]:
-        for skip in [1, 2]:
-            raft(
-                args.start_frame,
-                args.end_frame,
-                args.root_dir,
-                args.output_dir,
-                imgsize,
-                skip=skip,
-                zfill_length=zfill_length)
+    if args.warping_scheme is not None:
+        raft = RAFT_Flow(args.raft_args, device=device)
+        for imgsize in [args.stroke_img_size, args.pixel_size]:
+            for skip in args.warping_scheme:
+                raft(
+                    args.start_frame,
+                    args.end_frame,
+                    args.root_dir,
+                    args.output_dir,
+                    imgsize,
+                    skip=skip,
+                    zfill_length=zfill_length)
 
     model_name = args.model_name
     root = os.path.join(args.output_dir, model_name, "{}".format(
@@ -75,9 +76,9 @@ def main(args, config_path):
     # styletransfer loop
     ####################
 
-    for u, k in enumerate(range(args.start_frame, args.end_frame)):
+    for now_frame in range(args.start_frame, args.end_frame):
         style_img_file = args.style_img_file
-        content_img_file = f"{args.root_dir}/{str(k).zfill(zfill_length)}.jpg"
+        content_img_file = f"{args.root_dir}/{str(now_frame).zfill(zfill_length)}.jpg"
 
         start = datetime.datetime.now()
         LOGGER.info(f'style:{style_img_file}, content:{content_img_file}')
@@ -135,9 +136,8 @@ def main(args, config_path):
             tv_weight = args.stroke_tv_weight  # 1.#0.008#tv_weight=0
             curv_weight = args.stroke_curv_weight
             warp_weight = args.stroke_warp_weight  # 1.#0.008#tv_weight=0
-            skip_warp_weight = args.stroke_skip_warp_weight
 
-            if args.brush_initialize or u == 0:
+            if args.brush_initialize or now_frame - args.start_frame == 0:
                 bs_renderer = BrushStrokeRenderer(canvas_height, canvas_width, num_strokes, samples_per_curve, brushes_per_pixel,
                                                   canvas_color, length_scale, width_scale,
                                                   content_img=content_img[0].permute(1, 2, 0).cpu().numpy())
@@ -149,21 +149,27 @@ def main(args, config_path):
 
             LOGGER.info('Optimizing brushstroke-styled canvas..')
 
-            if k > 0 and u > 0:
-                init_path = os.path.join(
-                    root, f'stroke_final_{str(k-1).zfill(zfill_length)}-{os.path.basename(style_img_file).split(".")[0]}.jpg'
-                )
-                flow12, flow21, occ_flow12, occ_flow21, init_stroke = flow_setup(
-                    args, args.stroke_img_size, k, zfill_length, device, init_path, skip=1)
-            if args.skip_warp and k > 1 and u > 1:
-                init_path = os.path.join(
-                    root, f'stroke_stylized_{str(k-2).zfill(zfill_length)}-{os.path.basename(style_img_file).split(".")[0]}.jpg'
-                )
-                flow12_skip, flow21_skip, occ_flow12_skip, occ_flow21_skip, init_stroke_skip = flow_setup(
-                    args, args.stroke_img_size, k, zfill_length, device, init_path, skip=2)
+            if args.warping_scheme is not None:
+                flow_info = {}
+                for skip in args.warping_scheme:
+                    if now_frame - args.start_frame > skip - 1:
+                        init_path = os.path.join(
+                            root, f'stroke_final_{str(now_frame-skip).zfill(zfill_length)}-{os.path.basename(style_img_file).split(".")[0]}.jpg'
+                        )
+                        flow12, flow21, occ_flow12, occ_flow21, init_stroke = flow_setup(
+                            args, args.stroke_img_size, now_frame, zfill_length, device, init_path, skip=skip
+                        )
+                        flow_info[skip] = {
+                            "flow12": flow12,
+                            "flow21": flow21,
+                            "occ_flow12": occ_flow12,
+                            "occ_flow21": occ_flow21,
+                            "init_stroke": init_stroke
+                        }
 
             for iteration in range(num_steps):
-                if iteration == args.stroke_steps and k > 0 and u > 0:
+                if iteration == args.stroke_steps and now_frame - \
+                        args.start_frame > 0 and args.warping_scheme is not None:
                     style_weight = args.stroke_style_weight_warp  # 10000.
                     content_weight = args.stroke_content_weight_warp  # 1.
                     optimizer = optim.Adam([bs_renderer.location, bs_renderer.curve_s, bs_renderer.curve_e,
@@ -192,55 +198,34 @@ def main(args, config_path):
                 ###############
                 # warping score
                 ###############
-                if k > 0 and u > 0:
-                    now_stroke = input_img * 255.
-                    if iteration == 0:
-                        padder = InputPadder(init_stroke.shape)
-                        init_stroke, now_stroke = padder.pad(
-                            init_stroke, now_stroke)
-                    else:
-                        padder = InputPadder(now_stroke.shape)
-                        _, now_stroke = padder.pad(init_stroke, now_stroke)
+                warped_loss = torch.Tensor([0]).to(device)
+                if args.warping_scheme is not None:
+                    for skip in args.warping_scheme:
+                        if now_frame - args.start_frame > skip - 1:
+                            now_stroke = input_img * 255.
+                            if iteration == 0:
+                                padder = InputPadder(
+                                    flow_info[skip]["init_stroke"].shape)
+                                flow_info[skip]["init_stroke"], now_stroke = padder.pad(
+                                    flow_info[skip]["init_stroke"], now_stroke)
+                            else:
+                                padder = InputPadder(now_stroke.shape)
+                                _, now_stroke = padder.pad(
+                                    flow_info[skip]["init_stroke"], now_stroke)
 
-                    warped_loss = calc_warping_loss(
-                        init_stroke,
-                        now_stroke,
-                        flow12,
-                        flow21,
-                        occ_flow12,
-                        occ_flow21,
-                        device,
-                        criterion) * warp_weight
+                            warped_loss_skip = calc_warping_loss(
+                                flow_info[skip]["init_stroke"],
+                                now_stroke,
+                                flow_info[skip]["flow12"],
+                                flow_info[skip]["flow21"],
+                                flow_info[skip]["occ_flow12"],
+                                flow_info[skip]["occ_flow21"],
+                                device,
+                                criterion) * warp_weight
 
-                    loss += warped_loss
-                    color_loss += warped_loss
-                else:
-                    warped_loss = torch.Tensor([0])
-
-                if args.skip_warp and k > 1 and u > 1:
-                    now_stroke = input_img * 255.
-                    if iteration == 0:
-                        padder = InputPadder(init_stroke_skip.shape)
-                        init_stroke_skip, now_stroke = padder.pad(
-                            init_stroke_skip, now_stroke)
-                    else:
-                        padder = InputPadder(now_stroke.shape)
-                        _, now_stroke = padder.pad(
-                            init_stroke_skip, now_stroke)
-
-                    warped_loss_skip = calc_warping_loss(
-                        init_stroke_skip,
-                        now_stroke,
-                        flow12_skip,
-                        flow21_skip,
-                        occ_flow12_skip,
-                        occ_flow21_skip,
-                        device,
-                        criterion) * skip_warp_weight
-
-                    loss += warped_loss_skip
-                    color_loss += warped_loss_skip
-                    warped_loss += warped_loss_skip
+                            loss += warped_loss_skip
+                            color_loss += warped_loss_skip
+                            warped_loss += warped_loss_skip
 
                 loss.backward(inputs=[bs_renderer.location, bs_renderer.curve_s, bs_renderer.curve_e,
                                       bs_renderer.curve_c, bs_renderer.width], retain_graph=True)
@@ -254,7 +239,8 @@ def main(args, config_path):
                 #########
                 if iteration % print_freq == 0:
                     LOGGER.info(f'[{iteration}/{num_steps}] stroke, style loss:{style_score.item():.3f}, content loss:{content_score.item():.3f}, tv loss:{tv_score.item():.3f}, curvature loss:{curv_score.item():.3f}, warped loss:{warped_loss.item():.3f} ')
-                    if iteration >= args.stroke_steps and k > 0 and u > 0:
+                    if iteration >= args.stroke_steps and now_frame - \
+                            args.start_frame > 0 and args.warping_scheme is not None:
                         save_path = os.path.join(
                             root, f'stroke_stylized_warped_{os.path.basename(content_img_file).split(".")[0]}-{os.path.basename(style_img_file).split(".")[0]}.jpg'
                         )
@@ -271,20 +257,6 @@ def main(args, config_path):
                         np.uint8)
                     save = cv2.cvtColor(save, cv2.COLOR_RGB2BGR)
                     cv2.imwrite(save_path, save)
-
-                    if iteration == 0:
-                        save_path = os.path.join(
-                            root, f'stroke_init_stylized_{os.path.basename(content_img_file).split(".")[0]}-{os.path.basename(style_img_file).split(".")[0]}.jpg'
-                        )
-                        save = (
-                            input_img[0].detach().cpu().numpy().transpose(
-                                1,
-                                2,
-                                0) *
-                            255.).astype(
-                            np.uint8)
-                        save = cv2.cvtColor(save, cv2.COLOR_RGB2BGR)
-                        cv2.imwrite(save_path, save)
 
             with T.no_grad():
                 input_img = bs_renderer()
@@ -303,7 +275,8 @@ def main(args, config_path):
                 np.uint8)
             save = cv2.cvtColor(save, cv2.COLOR_RGB2BGR)
             cv2.imwrite(save_path, save)
-            model_path = os.path.join(root, f'renderer_{str(k).zfill(4)}.pth')
+            model_path = os.path.join(
+                root, f'renderer_{str(now_frame).zfill(zfill_length)}.pth')
             torch.save(bs_renderer.state_dict(), model_path)
 
         else:
@@ -322,12 +295,11 @@ def main(args, config_path):
             num_steps = 10
         else:
             num_steps = args.pixel_steps + \
-                args.pixel_steps_warp if k > 0 and u > 0 else args.pixel_steps
+                args.pixel_steps_warp if now_frame - args.start_frame > 0 else args.pixel_steps
         style_weight = args.pixel_style_weight  # 10000.
         content_weight = args.pixel_content_weight  # 1.
         tv_weight = args.pixel_tv_weight  # 1.#0.008#tv_weight=0
         warp_weight = args.pixel_warp_weight  # 1.#0.008#tv_weight=0
-        skip_warp_weight = args.pixel_skip_warp_weight
         resize_size = args.pixel_size
 
         content_img_resized = F.resize(content_img, resize_size)
@@ -342,21 +314,27 @@ def main(args, config_path):
         optimizer = optim.Adam([input_img], lr=1e-3)
         LOGGER.info('Optimizing pixel-wise canvas..')
 
-        if k > 0 and u > 0:
-            init_path = os.path.join(
-                root, f'finaloutput_{str(k-1).zfill(zfill_length)}-{os.path.basename(style_img_file).split(".")[0]}.jpg'
-            )
-            flow12, flow21, occ_flow12, occ_flow21, init_stroke = flow_setup(
-                args, args.pixel_size, k, zfill_length, device, init_path, skip=1)
-        if args.skip_warp and k > 1 and u > 1:
-            init_path = os.path.join(
-                root, f'finaloutput_{str(k-2).zfill(zfill_length)}-{os.path.basename(style_img_file).split(".")[0]}.jpg'
-            )
-            flow12_skip, flow21_skip, occ_flow12_skip, occ_flow21_skip, init_stroke_skip = flow_setup(
-                args, args.pixel_size, k, zfill_length, device, init_path, skip=2)
+        if args.warping_scheme is not None:
+            flow_info = {}
+            for skip in args.warping_scheme:
+                if now_frame - args.start_frame > skip - 1:
+                    init_path = os.path.join(
+                        root, f'finaloutput_{str(now_frame-skip).zfill(zfill_length)}-{os.path.basename(style_img_file).split(".")[0]}.jpg'
+                    )
+                    flow12, flow21, occ_flow12, occ_flow21, init_stroke = flow_setup(
+                        args, args.stroke_img_size, now_frame, zfill_length, device, init_path, skip=skip
+                    )
+                    flow_info[skip] = {
+                        "flow12": flow12,
+                        "flow21": flow21,
+                        "occ_flow12": occ_flow12,
+                        "occ_flow21": occ_flow21,
+                        "init_stroke": init_stroke
+                    }
 
         for iteration in range(num_steps):
-            if iteration == args.pixel_steps and k > 0 and u > 0:
+            if iteration == args.pixel_steps and now_frame - \
+                    args.start_frame > 0 and args.warping_scheme is not None:
                 optimizer = optim.Adam([input_img], lr=1e-3)
                 style_weight = args.pixel_style_weight_warp  # 10000.
                 content_weight = args.pixel_content_weight_warp  # 1.
@@ -373,53 +351,33 @@ def main(args, config_path):
             ###############
             # warping score
             ###############
-            if k > 0 and u > 0:
+            warped_loss = torch.Tensor([0]).to(device)
+            if args.warping_scheme is not None:
+                for skip in args.warping_scheme:
+                    if now_frame - args.start_frame > skip - 1:
+                        now_stroke = input_img * 255.
+                        if iteration == 0:
+                            padder = InputPadder(
+                                flow_info[skip]["init_stroke"].shape)
+                            flow_info[skip]["init_stroke"], now_stroke = padder.pad(
+                                flow_info[skip]["init_stroke"], now_stroke)
+                        else:
+                            padder = InputPadder(now_stroke.shape)
+                            _, now_stroke = padder.pad(
+                                flow_info[skip]["init_stroke"], now_stroke)
 
-                now_stroke = input_img * 255.
-                if iteration == 0:
-                    padder = InputPadder(init_stroke.shape)
-                    init_stroke, now_stroke = padder.pad(
-                        init_stroke, now_stroke)
-                else:
-                    padder = InputPadder(now_stroke.shape)
-                    _, now_stroke = padder.pad(init_stroke, now_stroke)
+                        warped_loss_skip = calc_warping_loss(
+                            flow_info[skip]["init_stroke"],
+                            now_stroke,
+                            flow_info[skip]["flow12"],
+                            flow_info[skip]["flow21"],
+                            flow_info[skip]["occ_flow12"],
+                            flow_info[skip]["occ_flow21"],
+                            device,
+                            criterion) * warp_weight
 
-                warped_loss = calc_warping_loss(
-                    init_stroke,
-                    now_stroke,
-                    flow12,
-                    flow21,
-                    occ_flow12,
-                    occ_flow21,
-                    device,
-                    criterion) * warp_weight
-
-                loss += warped_loss
-            else:
-                warped_loss = torch.Tensor([0])
-
-            if args.skip_warp and k > 1 and u > 1:
-                now_stroke = input_img * 255.
-                if iteration == 0:
-                    padder = InputPadder(init_stroke_skip.shape)
-                    init_stroke_skip, now_stroke = padder.pad(
-                        init_stroke_skip, now_stroke)
-                else:
-                    padder = InputPadder(now_stroke.shape)
-                    _, now_stroke = padder.pad(init_stroke_skip, now_stroke)
-
-                warped_loss_skip = calc_warping_loss(
-                    init_stroke_skip,
-                    now_stroke,
-                    flow12_skip,
-                    flow21_skip,
-                    occ_flow12_skip,
-                    occ_flow21_skip,
-                    device,
-                    criterion) * skip_warp_weight
-
-                loss += warped_loss_skip
-                warped_loss += warped_loss_skip
+                        loss += warped_loss_skip
+                        warped_loss += warped_loss_skip
 
             loss.backward(inputs=[input_img])
             optimizer.step()
@@ -430,7 +388,8 @@ def main(args, config_path):
             if iteration % print_freq == 0:
                 LOGGER.info(
                     f'[{iteration}/{num_steps}] pixel, style loss:{style_score:.3f}, content loss:{content_score:.3f}, tv loss:{tv_score:.3f}, warped loss:{warped_loss.item():.3f}')
-                if iteration >= args.pixel_steps and k > 0 and u > 0:
+                if iteration >= args.pixel_steps and now_frame - \
+                        args.start_frame > 0 and args.warping_scheme is not None:
                     save_path = os.path.join(
                         root, f'pixel_stylized_warped_{os.path.basename(content_img_file).split(".")[0]}-{os.path.basename(style_img_file).split(".")[0]}.jpg'
                     )

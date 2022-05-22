@@ -6,10 +6,10 @@ class CFG:
     style_img_file = "data/images/girl-on-a-divan.jpg"
     input_video = None  # "data/videos/traffic.mp4"
     start_frame = 0
-    end_frame = 100
+    end_frame = 50
     root_dir = "data/traffic_video"
     output_dir = "results/traffic"
-    model_name = "pixel_warping_BrushStroke_fromVideos_720p"
+    model_name = "pixel_warping_BrushStroke_fromVideos_512p"
     debug = False
     zfill_length = 3
 
@@ -29,8 +29,12 @@ class CFG:
     ################
     criterion = "mseloss"
     brushstroke = True
+    
+    ###############
+    # about warping
+    ###############
     warp_mask_use = True
-    skip_warp = True
+    warping_scheme = [1,4,16]
 
     #########################
     # stroke optimize setting
@@ -65,7 +69,7 @@ class CFG:
     pixel_tv_weight = 1e2
     pixel_warp_weight = 1e4
     pixel_skip_warp_weight = 1e4
-    pixel_size = 720
+    pixel_size = 512
     pixel_steps = 1500
     pixel_steps_warp = 1000
     pixel_style_weight_warp = 1e2
