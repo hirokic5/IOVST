@@ -16,7 +16,7 @@ from tqdm import tqdm as tqdm
 
 from raft_wrapper.utils.utils import InputPadder
 from raft_flow import RAFT_Flow
-from utils_func import init_logger, image_loader, flow_setup, calc_warping_loss
+from utils_func import init_logger, image_loader, flow_setup, calc_warping_loss, output2video
 
 
 def main(args, config_path):
@@ -25,6 +25,8 @@ def main(args, config_path):
     ########################
 
     if args.input_video is not None:
+        assert os.path.exists(
+            args.input_video), "the path to video seems to be wrong..."
         cap = cv2.VideoCapture(args.input_video)
         all_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         os.makedirs(args.root_dir, exist_ok=True)
@@ -275,10 +277,7 @@ def main(args, config_path):
                 np.uint8)
             save = cv2.cvtColor(save, cv2.COLOR_RGB2BGR)
             cv2.imwrite(save_path, save)
-            model_path = os.path.join(
-                root, f'renderer_{str(now_frame).zfill(zfill_length)}.pth')
-            torch.save(bs_renderer.state_dict(), model_path)
-
+            
         else:
             if args.initial_input is None:
                 input_img = content_img.clone()
@@ -322,7 +321,7 @@ def main(args, config_path):
                         root, f'finaloutput_{str(now_frame-skip).zfill(zfill_length)}-{os.path.basename(style_img_file).split(".")[0]}.jpg'
                     )
                     flow12, flow21, occ_flow12, occ_flow21, init_stroke = flow_setup(
-                        args, args.stroke_img_size, now_frame, zfill_length, device, init_path, skip=skip
+                        args, resize_size, now_frame, zfill_length, device, init_path, skip=skip
                     )
                     flow_info[skip] = {
                         "flow12": flow12,
@@ -428,6 +427,15 @@ def main(args, config_path):
 
     LOGGER.info('Finished! ALL !')
     LOGGER.info(f'elapsed time:{datetime.datetime.now()-start_whole}')
+
+    video_description = "brushstroke" if args.brushstroke else "normal"
+    output2video(
+        video_path=args.input_video, style_path=style_img_file, names=[
+            video_description], roots=[root], save_dir=root, c_name="output_video",
+        fps=None,
+        zfill_length=zfill_length,
+        start=args.start_frame,
+        end=args.end_frame)
 
 
 if __name__ == "__main__":

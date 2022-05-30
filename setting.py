@@ -3,12 +3,12 @@ class CFG:
     # initial setting
     #################
     device = "cuda"
-    style_img_file = "data/images/girl-on-a-divan.jpg"
-    input_video = None  # "data/videos/traffic.mp4"
+    style_img_file = "samples/styles/starry_night.jpg"
+    input_video = "samples/contents/goldenbridge.mp4"
     start_frame = 0
-    end_frame = 50
-    root_dir = "data/traffic_video"
-    output_dir = "results/traffic"
+    end_frame = 200
+    root_dir = "data/goldenbridge_video"
+    output_dir = "results/goldenbridge"
     model_name = "pixel_warping_BrushStroke_fromVideos_512p"
     debug = False
     zfill_length = 3
