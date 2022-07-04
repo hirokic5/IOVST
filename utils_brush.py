@@ -203,11 +203,17 @@ def gram_matrix(input):
 
     features = input.view(a * b, c * d)  # resise F_XL into \hat F_XL
 
+    """
     G = T.mm(features, features.t())  # compute the gram product
 
     # we 'normalize' the values of the gram matrix
     # by dividing by the number of element in each feature maps.
     return G.div(a * b * c * d)
+    """
+    G = T.mm(features.div(a * b * c * d), features.t())  # compute the gram product
+
+    return G
+    
 
 
 def projection(z):

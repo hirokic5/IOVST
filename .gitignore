@@ -8,3 +8,4 @@ results/
 .ipynb_checkpoints/
 __pycache__/
 setting_*.py
+workspace/

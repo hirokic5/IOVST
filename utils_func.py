@@ -85,19 +85,21 @@ def flow_setup(args, img_size, k, zfill_length, device, init_path, skip=1):
 
 
 def calc_warping_loss(init_stroke, now_stroke, flow12,
-                      flow21, occ_flow12, occ_flow21, device, criterion):
-    warped_images_next, warped_mask_next = warp(init_stroke, flow21, device)
-    new_mask = 1.0 - ((1.0 - warped_mask_next) + occ_flow21).clamp(0, 1)
+                      flow21, occ_flow12, occ_flow21, device, criterion,reduction):
+    warped_images_next_21, warped_mask_next = warp(init_stroke, flow21, device)
+    new_mask_21 = 1.0 - ((1.0 - warped_mask_next) + occ_flow21).clamp(0, 1)
     warped_loss = criterion(
-        warped_images_next * new_mask / 255.,
-        now_stroke * new_mask / 255.)
-
-    warped_images_next, warped_mask_next = warp(now_stroke, flow12, device)
-    new_mask = 1.0 - ((1.0 - warped_mask_next) + occ_flow12).clamp(0, 1)
-    warped_loss += criterion(warped_images_next *
-                             new_mask / 255., init_stroke * new_mask / 255.)
-
-    return warped_loss / 2
+        warped_images_next_21 * new_mask_21 / 255.,
+        now_stroke * new_mask_21 / 255.,reduction=reduction)
+    
+    warped_images_next_12, warped_mask_next = warp(now_stroke, flow12, device)
+    new_mask_12 = 1.0 - ((1.0 - warped_mask_next) + occ_flow12).clamp(0, 1)
+    
+    warped_loss += criterion(warped_images_next_12 *
+                             new_mask_12 / 255., init_stroke * new_mask_12 / 255.,reduction=reduction)
+    
+    return warped_loss / 2, new_mask_21, warped_images_next_21
+    
 
 
 class AverageMeter(object):
@@ -146,37 +148,28 @@ def timeSince(since, percent):
     return '%s (remain %s)' % (asMinutes(s), asMinutes(rs))
 
 
-def output2video(video_path, style_path, names, roots, save_dir, c_name,
-                 fps=None, zfill_length=3, start=0, end=60):
+def output2video(input_dir, style_path, names, roots, save_dir, c_name,
+                 fps=None, zfill_length=3, start=0, end=60, save_name="finaloutput"):
+    
     fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
-    cap = cv2.VideoCapture(video_path)
-    all_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS) if fps is None else fps
-    width, height = int(
-        cap.get(
-            cv2.CAP_PROP_FRAME_WIDTH)), int(
-        cap.get(
-            cv2.CAP_PROP_FRAME_HEIGHT))
-    print(fps, width, height)
-
+    fps = 10 if fps is None else fps    
     style = cv2.imread(style_path)
     h, w, c = style.shape
+    input_path = os.path.join(input_dir,f"{str(start).zfill(zfill_length)}.jpg")
+    frame = cv2.imread(input_path)
+    height, width, _ = frame.shape
     s_h = min(int(h * (width // 3 / w)), height * 2 // 3)
     thumb_s = cv2.resize(style, (width // 3, s_h))
 
     video_name = "{}_{}_{}.mp4".format(
-        Path(video_path).stem, Path(style_path).stem, c_name)
+        Path(input_dir).stem, Path(style_path).stem, c_name)
     save_path = os.path.join(save_dir, video_name)
     style_name = f"{Path(style_path).stem}"
     for index_frame in tqdm(range(start, end)):
         count = 0
         for name, root in zip(names, roots):
-            if name == "perframe_origin":
-                path = os.path.join(
-                    root, f"{str(index_frame).zfill(zfill_length)}-{style_name}_1000_0.jpg")
-            else:
-                path = os.path.join(
-                    root, f"finaloutput_{str(index_frame).zfill(zfill_length)}-{style_name}.jpg")
+            path = os.path.join(
+                root, f"{save_name}_{str(index_frame).zfill(zfill_length)}-{style_name}.jpg")
 
             if os.path.exists(path):
                 count += 1
@@ -184,46 +177,52 @@ def output2video(video_path, style_path, names, roots, save_dir, c_name,
             break
 
     all_frames = index_frame
-    print(all_frames)
+    print(fps, width, height, all_frames)
+
 
     for index_frame in tqdm(range(start, end)):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, index_frame)
-        ret, frame = cap.read()
         outputs = []
-        if ret:
-            for name, root in zip(names, roots):
-                thumb_c = cv2.resize(frame, (width // 3, height // 3))
-                s_h = min(int(h * (width // 3 / w)), height * 2 // 3)
-                thumb_s = cv2.resize(style, (width // 3, s_h))
-                thumb = np.vstack([thumb_c, thumb_s]) if s_h == height * 2 // 3 else np.vstack(
-                    [np.zeros((height * 2 // 3 - s_h, width // 3, 3), dtype=np.uint8), thumb_c, thumb_s])
-                h_t, w_t, _ = thumb.shape
-                thumb = cv2.resize(thumb, (w_t, height))
-                if name == "perframe_origin":
-                    path = os.path.join(
-                        root, f"{str(index_frame).zfill(zfill_length)}-{style_name}_1000_0.jpg")
-                else:
-                    path = os.path.join(
-                        root, f"finaloutput_{str(index_frame).zfill(zfill_length)}-{style_name}.jpg")
-                output = cv2.imread(path)
-                assert os.path.exists(path), f"path wrong...{path}"
-                output = cv2.resize(output, (width, height))
-                output = np.hstack([thumb, output])
-                cv2.putText(output, name, (10, 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 4)
-                outputs.append(output)
+        input_path = os.path.join(input_dir,f"{str(index_frame).zfill(zfill_length)}.jpg")
+        frame = cv2.imread(input_path)
+        for name, root in zip(names, roots):
+            thumb_c = cv2.resize(frame, (width // 3, height // 3))
+            s_h = min(int(h * (width // 3 / w)), height * 2 // 3)
+            thumb_s = cv2.resize(style, (width // 3, s_h))
+            thumb = np.vstack([thumb_c, thumb_s]) if s_h == height * 2 // 3 else np.vstack(
+                [np.zeros((height * 2 // 3 - s_h, width // 3, 3), dtype=np.uint8), thumb_c, thumb_s])
+            h_t, w_t, _ = thumb.shape
+            thumb = cv2.resize(thumb, (w_t, height))
+            path = os.path.join(
+                root, f"{save_name}_{str(index_frame).zfill(zfill_length)}-{style_name}.jpg")
+            output = cv2.imread(path)
+            assert os.path.exists(path), f"path wrong...{path}"
+            output = cv2.resize(output, (width, height))
+            output = np.hstack([thumb, output])
+            cv2.putText(output, name, (10, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 4)
+            outputs.append(output)
 
-            for k, o in enumerate(outputs):
-                if k == 0:
-                    output_all = o
-                else:
-                    output_all = np.vstack([output_all, o])
-            output_all = cv2.resize(output_all, (width, int(
-                output_all.shape[0] * width / output_all.shape[1])))
-            if index_frame == start:
-                h_all, w_all, _ = output_all.shape
-                video = cv2.VideoWriter(save_path, fourcc, fps, (w_all, h_all))
+        for k, o in enumerate(outputs):
+            if k == 0:
+                output_all = o
+            else:
+                output_all = np.vstack([output_all, o])
+        output_all = cv2.resize(output_all, (width, int(
+            output_all.shape[0] * width / output_all.shape[1])))
+        if index_frame == start:
+            h_all, w_all, _ = output_all.shape
+            video = cv2.VideoWriter(save_path, fourcc, fps, (w_all, h_all))
 
-            video.write(output_all)
+        video.write(output_all)
     video.release()
-    cap.release()
+
+def after_pad(image,pad=0):
+    if pad <= 0:
+        return image
+    else:
+        image[:pad,:,:] = image[pad:pad*2,:,:]
+        image[:,:pad,:] = image[:,pad:pad*2,:]
+        image[-pad:,:,:] = image[-pad*2:-pad,:,:]
+        image[:,-pad:,:] = image[:,-pad*2:-pad,:]
+        
+        return image

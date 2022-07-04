@@ -3,3 +3,4 @@ opencv-contrib-python
 scikit-learn
 scikit-image
 h5py
+kornia

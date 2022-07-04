@@ -1,3 +1,4 @@
+import kornia
 import torch as T
 import torch.nn.functional as F
 from torch_cluster import knn_graph
@@ -50,25 +51,59 @@ class StyleTransferLosses(VGG19):
                     self.style_weights[name] = style_weights[j]
                     j += 1
 
-    def forward(self, input):
+    def forward(self, input, mask=None):
         content_loss, style_loss = 0., 0.
         features = input
         for name, layer in self.named_children():
             features = layer(features)
+            if mask is not None:
+                b,c,h,w = features.shape
+                now_mask = kornia.geometry.transform.resize(
+                    mask, (h, w)
+                )
+
             if name in self.content_layers:
-                loss = features - self.content_features[name]
+                loss = (features - self.content_features[name])
                 if self.scale_by_y:
                     loss *= self.weights[name]
 
-                content_loss += (T.mean(loss ** 2) *
-                                 self.content_weights[name])
+                if mask is not None:
+                    loss *=  now_mask[:,0:1,:,:]
+                    if T.sum(now_mask[:,0:1,:,:]) > 0 :
+                        content_loss += (T.sum(loss ** 2) / T.sum(now_mask[:,0:1,:,:]) *
+                                         self.content_weights[name])
+
+                else:
+                    content_loss += (T.mean(loss ** 2) *
+                                     self.content_weights[name])
 
             if name in self.style_layers:
-                loss = F.mse_loss(
-                    self.style_features[name],
-                    utils_brush.gram_matrix(features),
-                    reduction='sum')
-                style_loss += (loss * self.style_weights[name])
+                if mask is None:
+                    now_gram = utils_brush.gram_matrix(features)
+                else:
+                    #b,c,h,w = features.shape
+                    #now_mask = kornia.geometry.transform.resize(
+                    #    mask, (h, w)
+                    #)
+                    now_mask = now_mask.view(1 * 3, h * w)
+                    flatten_features = features.view(b * c, h * w)
+                    flatten_features = flatten_features[:,now_mask[0,:]>0]
+                    ch,length = flatten_features.shape
+                    if length == 0:
+                        now_gram = None
+                    else:
+                        now_gram = T.mm(flatten_features, flatten_features.t())
+                        now_gram = now_gram.div(ch*length)
+
+                if now_gram is not None:
+                    loss = F.mse_loss(
+                        self.style_features[name],
+                        now_gram,
+                        reduction='sum')
+                    if not T.isinf(loss):
+                        style_loss += (loss * self.style_weights[name])
+                    else:
+                        print(loss,name)
 
         return content_loss, style_loss
 
