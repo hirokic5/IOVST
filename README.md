@@ -49,6 +49,12 @@ finally, install dependent libraries
 pip install -r requirements.txt
 ```
 
+# Usage
+quick demo
+```
+python main.py --setting setting.py
+```
+
 # Reference
 [Pytorch Brushstroke StyleTransfer implementation](https://github.com/justanhduc/brushstroke-parameterized-style-transfer)
 

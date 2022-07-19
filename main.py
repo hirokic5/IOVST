@@ -32,7 +32,12 @@ def main(args, config_path):
             args.input_video), "the path to video seems to be wrong..."
         cap = cv2.VideoCapture(args.input_video)
         all_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        os.makedirs(args.root_dir, exist_ok=True)
+        
+        video_name = os.path.basename(args.input_video).split(".")[0] 
+        output_dir = os.path.join(args.output_dir,video_name)
+        root_dir = os.path.join(output_dir,"video_frames")
+        
+        os.makedirs(root_dir, exist_ok=True)
         zfill_length = len(str(all_frames))
         prev_frame = None
         counts = 0
@@ -48,7 +53,7 @@ def main(args, config_path):
                 prev_frame = frame
                 if diff:
                     save_path = os.path.join(
-                        args.root_dir, f"{str(start_frame + counts).zfill(zfill_length)}.jpg")
+                        root_dir, f"{str(start_frame + counts).zfill(zfill_length)}.jpg")
                     cv2.imwrite(save_path, frame)
                     counts += 1
 
@@ -57,6 +62,13 @@ def main(args, config_path):
 
         cap.release()
         end_frame = start_frame + counts
+        
+    else:
+        assert os.path.exists(
+            args.root_dir), "if not use video, root dir must be exists"
+        video_name = os.path.basename(input_video).split(".")[0] 
+        output_dir = os.path.join(args.output_dir,video_name)
+        root_dir = args.root_dir
         
     
     device = torch.device(args.device)
@@ -67,7 +79,7 @@ def main(args, config_path):
             raft(
                 start_frame,
                 start_frame + counts,
-                args.root_dir,
+                root_dir,
                 args.output_dir,
                 imgsize,
                 skip=skip,
@@ -129,7 +141,7 @@ def main(args, config_path):
     if args.brushstroke:
         for now_frame in range(start_frame, end_frame):
             style_img_file = args.style_img_file
-            content_img_file = f"{args.root_dir}/{str(now_frame).zfill(zfill_length)}.jpg"
+            content_img_file = f"{root_dir}/{str(now_frame).zfill(zfill_length)}.jpg"
 
             start = datetime.datetime.now()
             LOGGER.info(f'style:{style_img_file}, content:{content_img_file}')
@@ -315,7 +327,7 @@ def main(args, config_path):
 
             for now_frame in range(start_frame, end_frame):
                 style_img_file = args.style_img_file
-                content_img_file = f"{args.root_dir}/{str(now_frame).zfill(zfill_length)}.jpg"
+                content_img_file = f"{root_dir}/{str(now_frame).zfill(zfill_length)}.jpg"
 
                 start = datetime.datetime.now()
                 LOGGER.info(
@@ -535,7 +547,7 @@ def main(args, config_path):
 
     for now_frame in range(start_frame, end_frame):
         style_img_file = args.style_img_file
-        content_img_file = f"{args.root_dir}/{str(now_frame).zfill(zfill_length)}.jpg"
+        content_img_file = f"{root_dir}/{str(now_frame).zfill(zfill_length)}.jpg"
 
         start = datetime.datetime.now()
         LOGGER.info(f'style:{style_img_file}, content:{content_img_file}')
@@ -706,7 +718,7 @@ def main(args, config_path):
     if args.warping_mode_pixel >= 1:
         for now_frame in range(start_frame, end_frame):
             style_img_file = args.style_img_file
-            content_img_file = f"{args.root_dir}/{str(now_frame).zfill(zfill_length)}.jpg"
+            content_img_file = f"{root_dir}/{str(now_frame).zfill(zfill_length)}.jpg"
 
             start = datetime.datetime.now()
             LOGGER.info(f'style:{style_img_file}, content:{content_img_file}')
@@ -893,7 +905,7 @@ def main(args, config_path):
 
     video_description = "brushstroke" if args.brushstroke else "normal"
     output2video(
-        input_dir=args.root_dir, style_path=style_img_file, names=[
+        input_dir=root_dir, style_path=style_img_file, names=[
             video_description], roots=[root], save_dir=root, c_name="output_video",
         fps=None,
         zfill_length=zfill_length,

@@ -7,8 +7,8 @@ class CFG:
     input_video = "samples/contents/davis_goat.mp4"
     start_frame = 0
     end_frame = 200
-    root_dir = "data/goldenbridge_video"
-    output_dir = "results/goldenbridge"
+    root_dir = None
+    output_dir = "results"
     model_name = "pixel_warping_BrushStroke_fromVideos_512p"
     debug = False
     zfill_length = 3
