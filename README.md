@@ -50,10 +50,11 @@ pip install -r requirements.txt
 ```
 
 # Usage
-quick demo
+Quick demo
 ```
 python main.py --setting setting.py
 ```
+After calculated, results is generated in ```results/```
 
 # Reference
 [Pytorch Brushstroke StyleTransfer implementation](https://github.com/justanhduc/brushstroke-parameterized-style-transfer)
