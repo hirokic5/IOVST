@@ -88,4 +88,3 @@ class VGG19(T.nn.Sequential):
                 tp = np.transpose(tp, (3, 2, 0, 1))
             weight_value_tuples.append((p, tp))
         utils_brush.batch_set_value(*zip(*(weight_value_tuples)))
-        

@@ -8,7 +8,8 @@ from vgg import VGG19
 
 
 class StyleTransferLosses(VGG19):
-    def __init__(self, weight_file, content_img: T.Tensor, style_img: T.Tensor, content_layers, style_layers,
+    def __init__(self, weight_file, content_img: T.Tensor, style_img: T.Tensor, 
+                 content_layers, style_layers,
                  scale_by_y=False, content_weights=None, style_weights=None):
         super(StyleTransferLosses, self).__init__(weight_file)
 
@@ -57,7 +58,7 @@ class StyleTransferLosses(VGG19):
         for name, layer in self.named_children():
             features = layer(features)
             if mask is not None:
-                b,c,h,w = features.shape
+                b, c, h, w = features.shape
                 now_mask = kornia.geometry.transform.resize(
                     mask, (h, w)
                 )
@@ -68,9 +69,9 @@ class StyleTransferLosses(VGG19):
                     loss *= self.weights[name]
 
                 if mask is not None:
-                    loss *=  now_mask[:,0:1,:,:]
-                    if T.sum(now_mask[:,0:1,:,:]) > 0 :
-                        content_loss += (T.sum(loss ** 2) / T.sum(now_mask[:,0:1,:,:]) *
+                    loss *= now_mask[:, 0:1, :, :]
+                    if T.sum(now_mask[:, 0:1, :, :]) > 0:
+                        content_loss += (T.sum(loss ** 2) / T.sum(now_mask[:, 0:1, :, :]) *
                                          self.content_weights[name])
 
                 else:
@@ -81,19 +82,15 @@ class StyleTransferLosses(VGG19):
                 if mask is None:
                     now_gram = utils_brush.gram_matrix(features)
                 else:
-                    #b,c,h,w = features.shape
-                    #now_mask = kornia.geometry.transform.resize(
-                    #    mask, (h, w)
-                    #)
                     now_mask = now_mask.view(1 * 3, h * w)
                     flatten_features = features.view(b * c, h * w)
-                    flatten_features = flatten_features[:,now_mask[0,:]>0]
-                    ch,length = flatten_features.shape
+                    flatten_features = flatten_features[:, now_mask[0, :] > 0]
+                    ch, length = flatten_features.shape
                     if length == 0:
                         now_gram = None
                     else:
                         now_gram = T.mm(flatten_features, flatten_features.t())
-                        now_gram = now_gram.div(ch*length)
+                        now_gram = now_gram.div(ch * length)
 
                 if now_gram is not None:
                     loss = F.mse_loss(
@@ -103,7 +100,7 @@ class StyleTransferLosses(VGG19):
                     if not T.isinf(loss):
                         style_loss += (loss * self.style_weights[name])
                     else:
-                        print(loss,name)
+                        print(loss, name)
 
         return content_loss, style_loss
 

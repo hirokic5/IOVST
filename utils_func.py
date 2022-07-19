@@ -11,7 +11,7 @@ import torch.nn.functional as F_nn
 from tqdm import tqdm as tqdm
 from pathlib import Path
 import cv2
-
+from torchvision.transforms import functional as F
 import torchvision.transforms as transforms
 
 
@@ -59,7 +59,8 @@ def warp(x, flo, DEVICE):
     return output, mask
 
 
-def flow_setup(args, img_size, k, zfill_length, device, init_path, skip=1):
+def flow_setup(args, origin_size, img_size, k,
+               zfill_length, device, init_path, skip=1):
     flow12 = torch.from_numpy(
         np.load(
             os.path.join(
@@ -80,26 +81,31 @@ def flow_setup(args, img_size, k, zfill_length, device, init_path, skip=1):
             os.path.join(
                 args.output_dir,
                 f"flow_{img_size}_skip{skip}/occ_flow12_backward_{str(k).zfill(zfill_length)}.npy"))).to(device)
-    init_stroke = image_loader(init_path, img_size, device) * 255.
+    init_stroke = image_loader(init_path, origin_size, device) * 255.
+    if origin_size != img_size:
+        flow12 = F.resize(flow12, origin_size)
+        flow21 = F.resize(flow21, origin_size)
+        occ_flow12 = F.resize(occ_flow12, origin_size)
+        occ_flow21 = F.resize(occ_flow21, origin_size)
+
     return flow12, flow21, occ_flow12, occ_flow21, init_stroke
 
 
 def calc_warping_loss(init_stroke, now_stroke, flow12,
-                      flow21, occ_flow12, occ_flow21, device, criterion,reduction):
+                      flow21, occ_flow12, occ_flow21, device, criterion, reduction):
     warped_images_next_21, warped_mask_next = warp(init_stroke, flow21, device)
     new_mask_21 = 1.0 - ((1.0 - warped_mask_next) + occ_flow21).clamp(0, 1)
     warped_loss = criterion(
         warped_images_next_21 * new_mask_21 / 255.,
-        now_stroke * new_mask_21 / 255.,reduction=reduction)
-    
+        now_stroke * new_mask_21 / 255., reduction=reduction)
+
     warped_images_next_12, warped_mask_next = warp(now_stroke, flow12, device)
     new_mask_12 = 1.0 - ((1.0 - warped_mask_next) + occ_flow12).clamp(0, 1)
-    
+
     warped_loss += criterion(warped_images_next_12 *
-                             new_mask_12 / 255., init_stroke * new_mask_12 / 255.,reduction=reduction)
-    
+                             new_mask_12 / 255., init_stroke * new_mask_12 / 255., reduction=reduction)
+
     return warped_loss / 2, new_mask_21, warped_images_next_21
-    
 
 
 class AverageMeter(object):
@@ -150,12 +156,13 @@ def timeSince(since, percent):
 
 def output2video(input_dir, style_path, names, roots, save_dir, c_name,
                  fps=None, zfill_length=3, start=0, end=60, save_name="finaloutput"):
-    
+
     fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
-    fps = 10 if fps is None else fps    
+    fps = 10 if fps is None else fps
     style = cv2.imread(style_path)
     h, w, c = style.shape
-    input_path = os.path.join(input_dir,f"{str(start).zfill(zfill_length)}.jpg")
+    input_path = os.path.join(
+        input_dir, f"{str(start).zfill(zfill_length)}.jpg")
     frame = cv2.imread(input_path)
     height, width, _ = frame.shape
     s_h = min(int(h * (width // 3 / w)), height * 2 // 3)
@@ -179,10 +186,10 @@ def output2video(input_dir, style_path, names, roots, save_dir, c_name,
     all_frames = index_frame
     print(fps, width, height, all_frames)
 
-
     for index_frame in tqdm(range(start, end)):
         outputs = []
-        input_path = os.path.join(input_dir,f"{str(index_frame).zfill(zfill_length)}.jpg")
+        input_path = os.path.join(
+            input_dir, f"{str(index_frame).zfill(zfill_length)}.jpg")
         frame = cv2.imread(input_path)
         for name, root in zip(names, roots):
             thumb_c = cv2.resize(frame, (width // 3, height // 3))
@@ -216,13 +223,14 @@ def output2video(input_dir, style_path, names, roots, save_dir, c_name,
         video.write(output_all)
     video.release()
 
-def after_pad(image,pad=0):
+
+def after_pad(image, pad=0):
     if pad <= 0:
         return image
     else:
-        image[:pad,:,:] = image[pad:pad*2,:,:]
-        image[:,:pad,:] = image[:,pad:pad*2,:]
-        image[-pad:,:,:] = image[-pad*2:-pad,:,:]
-        image[:,-pad:,:] = image[:,-pad*2:-pad,:]
-        
+        image[:pad, :, :] = image[pad:pad * 2, :, :]
+        image[:, :pad, :] = image[:, pad:pad * 2, :]
+        image[-pad:, :, :] = image[-pad * 2:-pad, :, :]
+        image[:, -pad:, :] = image[:, -pad * 2:-pad, :]
+
         return image

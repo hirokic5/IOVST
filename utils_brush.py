@@ -83,11 +83,9 @@ def clusters_to_strokes(segments, img, H, W, sec_scale=0.001, width_scale=1):
 
     N = clusters_params['center'].shape[0]
 
-    stddev = clusters_params['stddev']
     rel_num_pixels = 5 * clusters_params['num_pixels'] / np.sqrt(H * W)
 
     location = clusters_params['center']
-    num_pixels_per_cluster = clusters_params['num_pixels'].reshape(-1, 1)
     s = clusters_params['s']
     e = clusters_params['e']
     cluster_width = clusters_params['width']
@@ -210,10 +208,10 @@ def gram_matrix(input):
     # by dividing by the number of element in each feature maps.
     return G.div(a * b * c * d)
     """
-    G = T.mm(features.div(a * b * c * d), features.t())  # compute the gram product
+    G = T.mm(features.div(a * b * c * d),
+             features.t())  # compute the gram product
 
     return G
-    
 
 
 def projection(z):

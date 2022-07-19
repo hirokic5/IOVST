@@ -1,11 +1,11 @@
 from tqdm import tqdm as tqdm
 import os
 import cv2
-import kornia
 import torch
 import numpy as np
 import utils_func
 
+from utils_func import warp
 from flow_viz import flow_to_image
 from raft_wrapper.utils.utils import InputPadder, coords_grid, bilinear_sampler
 from raft_wrapper.raft import RAFT
@@ -37,15 +37,15 @@ class RAFT_Flow:
                     f"{root_dir}/{str(k).zfill(zfill_length)}.jpg", imgsize, device) * 255.
                 padder = InputPadder(image1.shape)
                 image0, image1 = padder.pad(image0, image1)
-                
+
                 thresh = 1.0
+                occ_thresh = 0.1 - 0.05 * skip / 32
                 with torch.no_grad():
                     _, flow12 = self.model(
                         image0, image1, iters=24, test_mode=True)
                     _, flow21 = self.model(
                         image1, image0, iters=24, test_mode=True)
 
-                    
                     coords0 = coords_grid(
                         1, image1.shape[2], image1.shape[3], device)
                     coords1 = coords0 + flow21
@@ -53,7 +53,19 @@ class RAFT_Flow:
                         bilinear_sampler(flow12, coords1.permute(0, 2, 3, 1))
 
                     err = (coords0 - coords2).norm(dim=1)
-                    occ = (err[0] > thresh).float().unsqueeze(0).unsqueeze(0)
+                    occ_flow21 = (
+                        err[0] > thresh).float().unsqueeze(0).unsqueeze(0)
+
+                    warped_images_next_21, warped_mask_next = warp(
+                        image0, flow21, device)
+                    new_mask_21 = 1.0 - \
+                        ((1.0 - warped_mask_next) + occ_flow21).clamp(0, 1)
+                    occ = (
+                        (((new_mask_21 *
+                           warped_images_next_21) -
+                          image1) /
+                         255).norm(
+                            dim=1) > occ_thresh).float().unsqueeze(0)
 
                     save_path = os.path.join(
                         save_dir, f"occ_flow21_forward_{str(k).zfill(zfill_length)}.npy")
@@ -66,39 +78,56 @@ class RAFT_Flow:
                         bilinear_sampler(flow21, coords1.permute(0, 2, 3, 1))
 
                     err = (coords0 - coords2).norm(dim=1)
-                    occ = (err[0] > thresh).float().unsqueeze(0).unsqueeze(0)
+                    occ_flow12 = (
+                        err[0] > thresh).float().unsqueeze(0).unsqueeze(0)
+
+                    warped_images_next_12, warped_mask_next = warp(
+                        image1, flow12, device)
+                    new_mask_12 = 1.0 - \
+                        ((1.0 - warped_mask_next) + occ_flow12).clamp(0, 1)
+                    occ = (
+                        (((new_mask_12 *
+                           warped_images_next_12) -
+                          image0) /
+                         255).norm(
+                            dim=1) > occ_thresh).float().unsqueeze(0)
 
                     save_path = os.path.join(
                         save_dir, f"occ_flow12_backward_{str(k).zfill(zfill_length)}.npy")
                     np.save(save_path, occ.detach().cpu().numpy())
-                    
+
                 view_all = np.vstack(
                     [
                         np.hstack(
                             [
-                                image0.detach().cpu().numpy()[0].transpose(1,2,0),
-                                image1.detach().cpu().numpy()[0].transpose(1,2,0),
+                                image0.detach().cpu().numpy()[
+                                    0].transpose(1, 2, 0),
+                                image1.detach().cpu().numpy()[
+                                    0].transpose(1, 2, 0),
                             ]
                         ),
                         np.hstack(
                             [
-                                flow_to_image(flow21.detach().cpu().numpy()[0].transpose(1,2,0)),
-                                flow_to_image(flow12.detach().cpu().numpy()[0].transpose(1,2,0)),
+                                flow_to_image(flow21.detach().cpu().numpy()[
+                                              0].transpose(1, 2, 0)),
+                                flow_to_image(flow12.detach().cpu().numpy()[
+                                              0].transpose(1, 2, 0)),
                             ]
                         )
                     ]
                 ).astype(np.uint8)
-                view_all = cv2.cvtColor(view_all,cv2.COLOR_RGB2BGR)
+                view_all = cv2.cvtColor(view_all, cv2.COLOR_RGB2BGR)
                 save_path = os.path.join(
                     save_dir, f"view_all_{str(k).zfill(zfill_length)}.jpg")
-                cv2.imwrite(save_path,view_all)
+                cv2.imwrite(save_path, view_all)
                 if count == 0:
                     fps = 5
                     fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
-                    video_path = os.path.join(save_dir, f"view_all_video.mp4")
+                    video_path = os.path.join(save_dir, "view_all_video.mp4")
                     h_all, w_all, _ = view_all.shape
-                    video = cv2.VideoWriter(video_path, fourcc, fps, (w_all, h_all))
-                    
+                    video = cv2.VideoWriter(
+                        video_path, fourcc, fps, (w_all, h_all))
+
                 save_path = os.path.join(
                     save_dir, f"flow12_{str(k).zfill(zfill_length)}.npy")
                 np.save(save_path, flow12.detach().cpu().numpy())
@@ -109,6 +138,6 @@ class RAFT_Flow:
 
                 video.write(view_all)
                 count += 1
-                
+
         if video is not None:
             video.release()
