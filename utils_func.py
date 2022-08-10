@@ -59,27 +59,27 @@ def warp(x, flo, DEVICE):
     return output, mask
 
 
-def flow_setup(args, origin_size, img_size, k,
+def flow_setup(output_dir, origin_size, img_size, k,
                zfill_length, device, init_path, skip=1):
     flow12 = torch.from_numpy(
         np.load(
             os.path.join(
-                args.output_dir,
+                output_dir,
                 f"flow_{img_size}_skip{skip}/flow12_{str(k).zfill(zfill_length)}.npy"))).to(device)
     flow21 = torch.from_numpy(
         np.load(
             os.path.join(
-                args.output_dir,
+                output_dir,
                 f"flow_{img_size}_skip{skip}/flow21_{str(k).zfill(zfill_length)}.npy"))).to(device)
     occ_flow21 = torch.from_numpy(
         np.load(
             os.path.join(
-                args.output_dir,
+                output_dir,
                 f"flow_{img_size}_skip{skip}/occ_flow21_forward_{str(k).zfill(zfill_length)}.npy"))).to(device)
     occ_flow12 = torch.from_numpy(
         np.load(
             os.path.join(
-                args.output_dir,
+                output_dir,
                 f"flow_{img_size}_skip{skip}/occ_flow12_backward_{str(k).zfill(zfill_length)}.npy"))).to(device)
     init_stroke = image_loader(init_path, origin_size, device) * 255.
     if origin_size != img_size:
@@ -92,21 +92,47 @@ def flow_setup(args, origin_size, img_size, k,
 
 
 def calc_warping_loss(init_stroke, now_stroke, flow12,
-                      flow21, occ_flow12, occ_flow21, device, criterion, reduction):
+                      flow21, occ_flow12, occ_flow21, device, criterion, 
+                      reduction, window_size=None, pre_mask_12=None, pre_mask_21=None):
     warped_images_next_21, warped_mask_next = warp(init_stroke, flow21, device)
+    warped_images_next_21 = warped_images_next_21.clamp(0, 255)
     new_mask_21 = 1.0 - ((1.0 - warped_mask_next) + occ_flow21).clamp(0, 1)
-    warped_loss = criterion(
-        warped_images_next_21 * new_mask_21 / 255.,
-        now_stroke * new_mask_21 / 255., reduction=reduction)
-
+    if pre_mask_21 is not None:
+        new_mask_21 = (new_mask_21 - pre_mask_21).clamp(0,1)
+    if window_size is None:
+        warped_loss = criterion(
+            warped_images_next_21 * new_mask_21 / 255.,
+            now_stroke * new_mask_21 / 255., reduction=reduction)
+    else:
+        warped_loss = criterion(
+            warped_images_next_21 * new_mask_21 / 255.,
+            now_stroke * new_mask_21 / 255., window_size=window_size, reduction=reduction)
+        
     warped_images_next_12, warped_mask_next = warp(now_stroke, flow12, device)
+    warped_images_next_12 = warped_images_next_12.clamp(0,255)
     new_mask_12 = 1.0 - ((1.0 - warped_mask_next) + occ_flow12).clamp(0, 1)
+    if pre_mask_12 is not None:
+        new_mask_12 = (new_mask_12 - pre_mask_12).clamp(0,1)
+    if window_size is None:
+        warped_loss += criterion(warped_images_next_12 *
+                                 new_mask_12 / 255., init_stroke * new_mask_12 / 255., reduction=reduction)
+    else:
+        warped_loss += criterion(warped_images_next_12 *
+                                 new_mask_12 / 255., init_stroke * new_mask_12 / 255., window_size=window_size, reduction=reduction)
+        
+    return warped_loss / 2, new_mask_12, new_mask_21, warped_images_next_12, warped_images_next_21
 
-    warped_loss += criterion(warped_images_next_12 *
-                             new_mask_12 / 255., init_stroke * new_mask_12 / 255., reduction=reduction)
-
-    return warped_loss / 2, new_mask_21, warped_images_next_21
-
+def histogram_loss(gt,pd,device,method = cv2.HISTCMP_CHISQR):
+    hists = []
+    for img in [gt,pd]:
+        image = img.detach().cpu().numpy()[0].transpose(1,2,0).astype(np.uint8)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        hist0 = cv2.calcHist([image], [0, 1, 2], None, [8, 8, 8],
+            [0, 256, 0, 256, 0, 256])
+        hist0 = cv2.normalize(hist0, hist0).flatten()
+        hists.append(hist0)
+    loss = cv2.compareHist(hists[0], hists[1], method)
+    return torch.Tensor([loss]).to(device)
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""

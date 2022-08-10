@@ -1,7 +1,7 @@
 # IOVST
 Iterative Optimization Video Style Transfers by pytorch.
 
-
+![output sample]("samples/demo/output.gif")
 # Installation
 ## Repository & Pretrained Weight
 ```
