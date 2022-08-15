@@ -2,6 +2,11 @@
 Iterative Optimization Video Style Transfers by pytorch.
 
 ![output sample](samples/demo/output.gif)
+
+youtube : https://youtu.be/iDNP2KfThEg
+
+blog(written in Japanese) : https://zenn.dev/kumamemo/articles/cca45744cc12de
+
 # Installation
 ## Repository & Pretrained Weight
 ```
@@ -56,7 +61,15 @@ python main.py --setting setting.py
 ```
 After calculated, results is generated in ```results/```
 
+# Tips
+- **More multipass iteration, better quality** (and more time...).
+- Less number of frames for stylized, less iteration is enough. 
+- If estimated optical flow is not good, quality of output is also not good...
+
+
 # Reference
 [Pytorch Brushstroke StyleTransfer implementation](https://github.com/justanhduc/brushstroke-parameterized-style-transfer)
 
 [RAFT official repository](https://github.com/princeton-vl/RAFT)
+
+[Thesis : Artistic style transfer for videos](https://arxiv.org/abs/1604.08610)

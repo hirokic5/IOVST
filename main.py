@@ -32,6 +32,8 @@ def main(args, config_path):
         assert os.path.exists(
             args.input_video), "the path to video seems to be wrong..."
         cap = cv2.VideoCapture(args.input_video)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        fps = fps if fps <= 30 else 29.97
         all_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         
         video_name = os.path.basename(args.input_video).split(".")[0] 
@@ -417,7 +419,7 @@ def main(args, config_path):
                 save = after_pad(save, pad=args.after_pad)
                 cv2.imwrite(save_path, save)
                 
-                if prev_style_score is not None and len(flow_info) == 0:
+                if prev_style_score is not None:
                     if abs(prev_style_score -
                            style_score) < args.training_stop_init:
                         second_step = True
@@ -877,7 +879,7 @@ def main(args, config_path):
                 output2video(
                     input_dir=root_dir, style_path=style_img_file, names=[
                         video_description], roots=[root], save_dir=root, c_name=f"output_video_iteration{pass_iteration}",
-                    fps=None,
+                    fps=fps,
                     zfill_length=zfill_length,
                     start=start_frame,
                     end=end_frame,
@@ -892,7 +894,7 @@ def main(args, config_path):
     output2video(
         input_dir=root_dir, style_path=style_img_file, names=[
             video_description], roots=[root], save_dir=root, c_name="output_video",
-        fps=None,
+        fps=fps,
         zfill_length=zfill_length,
         start=start_frame,
         end=end_frame,
